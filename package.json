@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
+    "build": "next build",
+    "start": "next start -H 127.0.0.1 -p 3000",
+    "start:prod": "next build && next start -H 127.0.0.1 -p 3000",
     "lint": "eslint"
   },
   "dependencies": {

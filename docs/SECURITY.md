@@ -38,8 +38,11 @@
 
 ## Mainnet checklist
 
-- [ ] Real WalletConnect project ID + domain allowlist
-- [ ] CSP headers on Vercel
+- [x] Security headers in `next.config.ts` (CSP, XFO, XCTO, Referrer, Permissions, HSTS in prod)
+- [x] `poweredByHeader: false` + no production browser source maps
+- [x] Public preview via `next build && next start` (never expose `next dev` / HMR)
+- [ ] Real WalletConnect project ID + domain allowlist (`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`)
 - [ ] Fee recipient = cold/ops wallet, not day-trading hot key
 - [ ] Small live dry-run each route
 - [ ] ToS if charging fees
+- [ ] Stable domain (not trycloudflare) + CDN (Vercel)

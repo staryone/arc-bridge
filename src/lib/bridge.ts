@@ -119,14 +119,18 @@ export async function bridgeUsdc(params: BridgeParams) {
     config.maxFee = params.speed.maxFee;
   }
 
+  // Cast: our CircleChainName is a subset of App Kit BridgeChainIdentifier strings
+  const fromChain = params.fromCircleName as never;
+  const toChain = params.toCircleName as never;
+
   const bridgePromise = kit.bridge({
     from: {
       adapter,
-      chain: params.fromCircleName,
+      chain: fromChain,
     },
     to: {
       adapter,
-      chain: params.toCircleName,
+      chain: toChain,
       ...(useForwarder ? { useForwarder: true } : {}),
     },
     amount: params.amount,

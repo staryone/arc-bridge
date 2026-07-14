@@ -6,14 +6,16 @@ export const NETWORK =
 
 export const IS_TESTNET = NETWORK !== "mainnet";
 
-/** Circle App Kit chain name strings (must match @circle-fin/app-kit) */
+/**
+ * Circle App Kit bridge chain strings currently accepted by BridgeChainIdentifier.
+ * "Arc" mainnet is reserved for flip day — only use when App Kit ships it.
+ */
 export type CircleChainName =
   | "Ethereum_Sepolia"
   | "Base_Sepolia"
   | "Arc_Testnet"
   | "Ethereum"
-  | "Base"
-  | "Arc";
+  | "Base";
 
 export type ChainOption = {
   id: string;
@@ -56,10 +58,12 @@ export const ARC_CHAIN: ChainOption = IS_TESTNET
       isArc: true,
     }
   : {
+      // Placeholder until Arc mainnet lands in App Kit — keep Arc_Testnet typed name
+      // and override via MAINNET-FLIP.md when official chain string ships.
       id: "arc",
       label: "Arc",
       short: "Arc",
-      circleName: "Arc",
+      circleName: "Arc_Testnet",
       chain: arcTestnet,
       usdc: null,
       explorer: "",

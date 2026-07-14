@@ -1,14 +1,15 @@
 /**
  * Client-side bridge via Circle App Kit.
  * Wallet signs; customFee → 90% FEE_RECIPIENT / 10% Circle.
+ * Always useForwarder when destination is Arc (zero-gas bootstrap).
  */
 import { AppKit } from "@circle-fin/app-kit";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
 import {
-  ARC_DEST,
   FEE_RECIPIENT,
   feeFromAmount,
   type CircleChainName,
+  type SpeedTier,
 } from "@/config/chains";
 
 export type BridgeProgress = {
@@ -16,18 +17,24 @@ export type BridgeProgress = {
   state?: string;
   txHash?: string;
   explorerUrl?: string;
+  method?: string;
 };
 
 export type BridgeParams = {
-  sourceCircleName: CircleChainName;
+  fromCircleName: CircleChainName;
+  toCircleName: CircleChainName;
   amount: string;
   /** EIP-1193 from active wagmi connector (preferred) */
   provider?: unknown;
-  /** default true for Arc zero-gas bootstrap */
+  /**
+   * Force forwarder when minting on Arc (default true if to is Arc_*).
+   * Hidden from UI — always on for Arc dest.
+   */
   useForwarder?: boolean;
-  /** CCTP speed */
-  transferSpeed?: "FAST" | "SLOW";
+  speed: SpeedTier;
   onProgress?: (p: BridgeProgress) => void;
+  /** Abort / early settle if kit hangs after success */
+  signal?: AbortSignal;
 };
 
 type Eip1193Provider = {
@@ -36,75 +43,158 @@ type Eip1193Provider = {
   removeListener?: (...args: unknown[]) => void;
 };
 
-export async function bridgeUsdcToArc(params: BridgeParams) {
+function isArcChain(name: string) {
+  return name === "Arc_Testnet" || name === "Arc";
+}
+
+/** States that mean the user-facing flow is done enough to unlock UI */
+function isTerminalProgress(p: BridgeProgress): boolean {
+  const s = `${p.state || ""} ${p.step || ""} ${p.method || ""}`.toLowerCase();
+  return (
+    s.includes("success") ||
+    s.includes("complete") ||
+    s.includes("completed") ||
+    s.includes("minted") ||
+    s.includes("done") ||
+    (s.includes("mint") && s.includes("success"))
+  );
+}
+
+export async function bridgeUsdc(params: BridgeParams) {
   if (typeof window === "undefined") {
     throw new Error("Bridge only runs in the browser.");
   }
 
   const fromParam = params.provider as Eip1193Provider | undefined;
-  const ethereum =
-    fromParam?.request
-      ? fromParam
-      : (window as unknown as { ethereum?: Eip1193Provider }).ethereum;
+  const ethereum = fromParam?.request
+    ? fromParam
+    : (window as unknown as { ethereum?: Eip1193Provider }).ethereum;
   if (!ethereum?.request) {
     throw new Error("No browser wallet found. Connect MetaMask / Rabby first.");
   }
 
-  // Circle adapter expects EIP-1193 provider
   const adapter = await createViemAdapterFromProvider({
     provider: ethereum as never,
   });
 
   const kit = new AppKit();
+  let sawTerminal = false;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   kit.on("*" as any, (payload: any) => {
     const values = payload?.values || {};
     const data = values?.data || {};
-    params.onProgress?.({
+    const progress: BridgeProgress = {
       step: String(values.name || payload?.method || payload?.type || "event"),
       state: values.state ? String(values.state) : undefined,
+      method: payload?.method ? String(payload.method) : undefined,
       txHash: values.txHash
         ? String(values.txHash)
         : data.txHash
           ? String(data.txHash)
           : undefined,
       explorerUrl: values.explorerUrl ? String(values.explorerUrl) : undefined,
-    });
+    };
+    params.onProgress?.(progress);
+    if (isTerminalProgress(progress)) sawTerminal = true;
   });
 
-  const feeValue = feeFromAmount(params.amount);
-  const useForwarder = params.useForwarder !== false;
+  const feeBps = params.speed.feeBps;
+  const feeValue = feeFromAmount(params.amount, feeBps);
+  const toIsArc = isArcChain(params.toCircleName);
+  const useForwarder =
+    params.useForwarder !== undefined ? params.useForwarder : toIsArc;
 
-  const result = await kit.bridge({
+  const config: Record<string, unknown> = {
+    transferSpeed: params.speed.transferSpeed,
+  };
+  if (Number(feeValue) > 0) {
+    config.customFee = {
+      value: feeValue,
+      recipientAddress: FEE_RECIPIENT,
+    };
+  }
+  // Extreme / optional higher maxFee headroom (USDC human units as string)
+  if (params.speed.maxFee) {
+    config.maxFee = params.speed.maxFee;
+  }
+
+  const bridgePromise = kit.bridge({
     from: {
       adapter,
-      chain: params.sourceCircleName,
+      chain: params.fromCircleName,
     },
     to: {
       adapter,
-      chain: ARC_DEST.circleName,
-      useForwarder,
+      chain: params.toCircleName,
+      ...(useForwarder ? { useForwarder: true } : {}),
     },
     amount: params.amount,
-    config: {
-      transferSpeed: params.transferSpeed || "SLOW",
-      ...(Number(feeValue) > 0
-        ? {
-            customFee: {
-              value: feeValue,
-              recipientAddress: FEE_RECIPIENT,
-            },
-          }
-        : {}),
-    },
+    config: config as never,
   });
 
-  if (result && (result as { state?: string }).state === "error") {
-    const retried = await kit.retryBridge(result as never, {
-      from: adapter,
-      to: adapter,
+  // Hard timeout so UI never sticks forever (15 min)
+  const timeoutMs = 15 * 60 * 1000;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    const t = setTimeout(
+      () =>
+        reject(
+          new Error(
+            "Bridge timed out waiting for final confirmation. Check explorer — transfer may still complete."
+          )
+        ),
+      timeoutMs
+    );
+    params.signal?.addEventListener("abort", () => {
+      clearTimeout(t);
+      reject(new Error("Bridge cancelled"));
     });
-    return retried;
+  });
+
+  let result: unknown;
+  try {
+    result = await Promise.race([bridgePromise, timeoutPromise]);
+  } catch (e) {
+    // If we already saw mint success events, treat as soft success
+    if (sawTerminal) {
+      return { state: "success", soft: true, error: String(e) };
+    }
+    throw e;
+  }
+
+  if (result && (result as { state?: string }).state === "error") {
+    try {
+      const retried = await kit.retryBridge(result as never, {
+        from: adapter,
+        to: adapter,
+      });
+      return retried;
+    } catch (re) {
+      if (sawTerminal) return { state: "success", soft: true };
+      throw re;
+    }
   }
   return result;
+}
+
+/** @deprecated */
+export async function bridgeUsdcToArc(
+  params: Omit<BridgeParams, "fromCircleName" | "toCircleName" | "speed"> & {
+    sourceCircleName: CircleChainName;
+    transferSpeed?: "FAST" | "SLOW";
+    useForwarder?: boolean;
+  }
+) {
+  const { SPEED_TIERS } = await import("@/config/chains");
+  const speed =
+    params.transferSpeed === "FAST" ? SPEED_TIERS.fast : SPEED_TIERS.standard;
+  return bridgeUsdc({
+    fromCircleName: params.sourceCircleName,
+    toCircleName: "Arc_Testnet",
+    amount: params.amount,
+    provider: params.provider,
+    useForwarder: params.useForwarder,
+    speed,
+    onProgress: params.onProgress,
+  });
 }

@@ -47,12 +47,12 @@ export default function Home() {
       <main className="mx-auto max-w-5xl px-4 py-10 sm:py-16 flex flex-col items-center">
         <div className="text-center mb-8 max-w-lg">
           <h2 className="text-[32px] sm:text-[40px] font-semibold tracking-tight text-[#0a0b0d] leading-[1.1]">
-            Move USDC to Arc
+            Bridge USDC ↔ Arc
             <span className="text-[#0052ff]">.</span>
           </h2>
           <p className="mt-3 text-[15px] text-[#5b616e] leading-relaxed">
-            Non-custodial bridge powered by Circle CCTP. Connect your wallet, pick a
-            source chain, and land USDC on Arc — gas is USDC-native.
+            Non-custodial CCTP bridge. Deposit to Arc or withdraw back to Ethereum /
+            Base — keys stay in your wallet.
           </p>
         </div>
 
@@ -66,12 +66,12 @@ export default function Home() {
               d: "You sign. Keys never leave your wallet. No server hot key.",
             },
             {
-              t: "Circle CCTP v2",
-              d: "Burn on source, mint on Arc. Official App Kit + forwarder bootstrap.",
+              t: "Both directions",
+              d: "Sepolia / Base → Arc and Arc → Ethereum/Base via CCTP. Forwarder auto on Arc mint.",
             },
             {
               t: "Transparent fee",
-              d: "Service fee shown before sign. 90% operator · 10% Circle split on-chain.",
+              d: "Tiered bps shown before sign. 90% operator · 10% Circle. Hard-capped.",
             },
           ].map((f) => (
             <div

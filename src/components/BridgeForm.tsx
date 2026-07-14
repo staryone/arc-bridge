@@ -140,7 +140,7 @@ export function BridgeForm() {
   const [fromId, setFromId] = useState(EVM_OPTIONS[0]?.id || "eth-sepolia");
   const [toId, setToId] = useState(ARC_CHAIN.id);
   const [amount, setAmount] = useState("1");
-  const [speedId, setSpeedId] = useState<SpeedId>("standard");
+  const [speedId, setSpeedId] = useState<SpeedId>("fast");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);

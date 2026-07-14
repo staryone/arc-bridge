@@ -1,21 +1,32 @@
-import { baseSepolia, sepolia, type Chain } from "viem/chains";
+import { base, baseSepolia, mainnet, sepolia, type Chain } from "viem/chains";
+import {
+  ARC_MAINNET_CIRCLE_NAME_PLACEHOLDER,
+  ARC_MAINNET_EXPLORER,
+  ARC_MAINNET_USDC,
+  MAINNET_READINESS,
+  arcMainnet,
+  canExposeMainnetUi,
+  mainnetBlockers,
+} from "./mainnet";
 
-/** App environment — flip via NEXT_PUBLIC_NETWORK=mainnet when Arc mainnet ships */
+/** App environment — flip via NEXT_PUBLIC_NETWORK=mainnet only when ready (see docs/MAINNET-FLIP.md) */
 export const NETWORK =
   (process.env.NEXT_PUBLIC_NETWORK as "testnet" | "mainnet") || "testnet";
 
 export const IS_TESTNET = NETWORK !== "mainnet";
 
 /**
- * Circle App Kit bridge chain strings currently accepted by BridgeChainIdentifier.
- * "Arc" mainnet is reserved for flip day — only use when App Kit ships it.
+ * Circle App Kit bridge chain strings.
+ * Mainnet Arc string is a placeholder until App Kit ships it — never pass
+ * "Arc" to kit.bridge unless MAINNET_READINESS.bridgeReady (or you know the kit accepts it).
  */
 export type CircleChainName =
   | "Ethereum_Sepolia"
   | "Base_Sepolia"
   | "Arc_Testnet"
   | "Ethereum"
-  | "Base";
+  | "Base"
+  | "Arc";
 
 export type ChainOption = {
   id: string;
@@ -45,31 +56,55 @@ export const arcTestnet = {
   testnet: true,
 } as const satisfies Chain;
 
-export const ARC_CHAIN: ChainOption = IS_TESTNET
-  ? {
-      id: "arc-testnet",
-      label: "Arc Testnet",
-      short: "Arc",
-      circleName: "Arc_Testnet",
-      chain: arcTestnet,
-      usdc: null,
-      explorer: "https://testnet.arcscan.app",
-      nativeSymbol: "USDC",
-      isArc: true,
-    }
-  : {
-      // Placeholder until Arc mainnet lands in App Kit — keep Arc_Testnet typed name
-      // and override via MAINNET-FLIP.md when official chain string ships.
-      id: "arc",
-      label: "Arc",
-      short: "Arc",
-      circleName: "Arc_Testnet",
-      chain: arcTestnet,
-      usdc: null,
-      explorer: "",
-      nativeSymbol: "USDC",
-      isArc: true,
-    };
+/** Re-export mainnet chain skeleton */
+export { arcMainnet } from "./mainnet";
+export {
+  MAINNET_READINESS,
+  ARC_MAINNET_CCTP,
+  ARC_MAINNET_CHAIN_ID,
+  ARC_MAINNET_RPC_DEFAULT,
+  canExposeMainnetUi,
+  mainnetBlockers,
+} from "./mainnet";
+
+const arcMainnetOption: ChainOption = {
+  id: "arc",
+  label: "Arc",
+  short: "Arc",
+  // Placeholder Circle name — App Kit does not accept this yet (2026-07-14)
+  circleName: ARC_MAINNET_CIRCLE_NAME_PLACEHOLDER,
+  chain: arcMainnet,
+  usdc: null,
+  explorer: ARC_MAINNET_EXPLORER,
+  nativeSymbol: "USDC",
+  isArc: true,
+};
+
+const arcTestnetOption: ChainOption = {
+  id: "arc-testnet",
+  label: "Arc Testnet",
+  short: "Arc",
+  circleName: "Arc_Testnet",
+  chain: arcTestnet,
+  usdc: null,
+  explorer: "https://testnet.arcscan.app",
+  nativeSymbol: "USDC",
+  isArc: true,
+};
+
+/**
+ * When NETWORK=mainnet but bridge not ready, still use real 5042 chain for wallet
+ * if experimental, else fall back to testnet Arc so build/dev don't brick.
+ */
+export const ARC_CHAIN: ChainOption = (() => {
+  if (IS_TESTNET) return arcTestnetOption;
+  if (canExposeMainnetUi()) return arcMainnetOption;
+  // Safe fallback: mainnet flag without readiness → keep testnet Arc for kit compatibility
+  return {
+    ...arcTestnetOption,
+    label: "Arc (mainnet not ready — using testnet)",
+  };
+})();
 
 /** External EVM chains that can send/receive vs Arc */
 export const EVM_OPTIONS: ChainOption[] = IS_TESTNET
@@ -101,9 +136,19 @@ export const EVM_OPTIONS: ChainOption[] = IS_TESTNET
         label: "Ethereum",
         short: "ETH",
         circleName: "Ethereum",
-        chain: sepolia,
+        chain: mainnet,
         usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
         explorer: "https://etherscan.io",
+        nativeSymbol: "ETH",
+      },
+      {
+        id: "base",
+        label: "Base",
+        short: "Base",
+        circleName: "Base",
+        chain: base,
+        usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        explorer: "https://basescan.org",
         nativeSymbol: "ETH",
       },
     ];
@@ -115,7 +160,7 @@ export const ARC_DEST = {
   label: ARC_CHAIN.label,
   chainId: ARC_CHAIN.chain.id,
   rpc: ARC_CHAIN.chain.rpcUrls.default.http[0] || "",
-  usdc: "0x3600000000000000000000000000000000000000" as `0x${string}`,
+  usdc: ARC_MAINNET_USDC,
   explorer: ARC_CHAIN.explorer,
   gasIsUsdc: true,
 };
@@ -213,4 +258,16 @@ export function youReceiveFromFee(feeStr: string): string {
 export function chainById(id: string): ChainOption | undefined {
   if (id === ARC_CHAIN.id) return ARC_CHAIN;
   return EVM_OPTIONS.find((c) => c.id === id);
+}
+
+/** Human blockers for UI banner when NETWORK=mainnet but not bridge-ready */
+export function mainnetStatusMessage(): string | null {
+  if (IS_TESTNET) return null;
+  if (MAINNET_READINESS.bridgeReady) return null;
+  const blockers = mainnetBlockers();
+  return (
+    "Arc mainnet soft-live (RPC/CCTP partial) but App Kit bridge path not ready: " +
+    blockers.slice(0, 3).join("; ") +
+    (blockers.length > 3 ? "…" : "")
+  );
 }

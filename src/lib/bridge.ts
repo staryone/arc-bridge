@@ -47,6 +47,20 @@ function isArcChain(name: string) {
   return name === "Arc_Testnet" || name === "Arc";
 }
 
+/**
+ * Guard: App Kit only knows Arc_Testnet today. Calling kit.bridge with
+ * placeholder "Arc" will fail until Circle ships mainnet chain config.
+ */
+function assertAppKitChainSupported(name: string) {
+  if (name === "Arc") {
+    throw new Error(
+      "Arc mainnet is not in Circle App Kit yet (only Arc_Testnet). " +
+        "Blockdaemon RPC is live (chainId 5042) but kit.bridge cannot target it. " +
+        "See docs/MAINNET-FLIP.md and src/config/mainnet.ts readiness."
+    );
+  }
+}
+
 /** States that mean the user-facing flow is done enough to unlock UI */
 function isTerminalProgress(p: BridgeProgress): boolean {
   const s = `${p.state || ""} ${p.step || ""} ${p.method || ""}`.toLowerCase();
@@ -98,6 +112,9 @@ export async function bridgeUsdc(params: BridgeParams) {
     params.onProgress?.(progress);
     if (isTerminalProgress(progress)) sawTerminal = true;
   });
+
+  assertAppKitChainSupported(params.fromCircleName);
+  assertAppKitChainSupported(params.toCircleName);
 
   const feeBps = params.speed.feeBps;
   const feeValue = feeFromAmount(params.amount, feeBps);

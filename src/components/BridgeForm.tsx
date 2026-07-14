@@ -17,6 +17,7 @@ import {
   IS_TESTNET,
   SPEED_TIERS,
   feeFromAmount,
+  mainnetStatusMessage,
   youReceiveFromFee,
   type ChainOption,
   type SpeedId,
@@ -328,6 +329,12 @@ export function BridgeForm() {
             Test tokens only. Arc gas is{" "}
             <span className="font-semibold text-[#0a0b0d]">USDC</span> — mint on
             Arc always uses Circle Forwarder (automatic).
+          </div>
+        )}
+
+        {!IS_TESTNET && mainnetStatusMessage() && (
+          <div className="mx-6 mb-4 rounded-2xl border border-[#f5d0a9] bg-[#fff7ed] px-4 py-3 text-[13px] text-[#9a3412] leading-snug">
+            Soft-live only. {mainnetStatusMessage()}
           </div>
         )}
 

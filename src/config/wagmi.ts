@@ -1,8 +1,13 @@
 "use client";
 
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
-import { baseSepolia, sepolia } from "wagmi/chains";
-import { arcTestnet, IS_TESTNET } from "./chains";
+import { base, baseSepolia, mainnet, sepolia } from "wagmi/chains";
+import {
+  arcMainnet,
+  arcTestnet,
+  canExposeMainnetUi,
+  IS_TESTNET,
+} from "./chains";
 
 /**
  * WalletConnect Cloud project id (https://cloud.walletconnect.com).
@@ -30,11 +35,16 @@ if (typeof window !== "undefined" && (!rawId || rawId.startsWith("demo_"))) {
   }
 }
 
+const mainnetChains = canExposeMainnetUi()
+  ? ([mainnet, base, arcMainnet] as const)
+  : // NETWORK=mainnet but not ready: still list ETH/Base mainnet + testnet Arc for kit
+    ([mainnet, base, arcTestnet] as const);
+
 export const wagmiConfig = getDefaultConfig({
   appName: process.env.NEXT_PUBLIC_APP_NAME || "Arc Bridge",
   projectId,
   chains: IS_TESTNET
-    ? [sepolia, baseSepolia, arcTestnet]
-    : [sepolia, arcTestnet],
+    ? ([sepolia, baseSepolia, arcTestnet] as const)
+    : mainnetChains,
   ssr: true,
 });
